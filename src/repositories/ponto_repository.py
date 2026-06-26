@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import select
 
 from src.core.ponto import JornadaDiaria, RegistroPonto, PontosBatidos
-from src.schemas.ponto import RegistroPontoCreate
+from src.schemas.ponto import RegistroPontoCreate, List, RegistroPontoCreate
 
 class PontoRepository:
     def __init__(self, db: Session):
@@ -70,3 +70,14 @@ class PontoRepository:
         self.db.refresh(novo_ponto)
 
         return novo_ponto
+    
+    def listar_pontos_por_usuario(self, usuario_id: int) -> List[JornadaDiaria]:
+            """
+            Busca todo o histórico de jornadas e pontos de um usuário específico.
+            """
+            query = (
+                select(JornadaDiaria)
+                .where(JornadaDiaria.id_user == usuario_id)
+                .order_by(JornadaDiaria.data.desc()) # Traz os dias mais recentes primeiro
+            )
+            return self.db.execute(query).scalars().all()

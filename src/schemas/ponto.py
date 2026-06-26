@@ -1,3 +1,4 @@
+# src/schemas/ponto.py
 from datetime import datetime, date
 from pydantic import BaseModel
 from typing import List, Optional
@@ -7,12 +8,24 @@ class RegistroPontoCreate(BaseModel):
     usuario_id: int
     observacao: Optional[str] = None
 
+
 class RegistroPontoResponse(BaseModel):
     id: int
-    id_jornada: int               
+    id_jornada: int
     horario: datetime
-    registro: PontosBatidos        
-    
+    registro: PontosBatidos
 
     class Config:
-        from_attributes = True  
+        from_attributes = True
+
+
+class JornadaDiariaResponse(BaseModel):
+    id: int
+    id_user: int
+    data: date
+    status: bool
+    saldo_horas: int
+    pontos: List[RegistroPontoResponse] = []  # Relacionamento automático
+
+    class Config:
+        from_attributes = True

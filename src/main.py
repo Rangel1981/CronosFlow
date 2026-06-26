@@ -1,9 +1,9 @@
-# src/main.py
+from typing import List
 from fastapi import FastAPI, Depends, HTTPException, status
 from sqlalchemy.orm import Session
-from src.schemas.ponto import RegistroPontoCreate, RegistroPontoResponse
+from src.schemas.ponto import JornadaDiariaResponse, RegistroPontoCreate, RegistroPontoResponse
 from src.repositories.ponto_repository import PontoRepository
-from src.core.database import SessionLocal  # Garanta que você tem a SessionLocal criada lá
+from src.core.database import SessionLocal  
 from src.schemas.user import UserCreate, UserResponse
 from src.repositories.user_repository import UserRepository
 
@@ -64,3 +64,9 @@ def bater_ponto(ponto_in: RegistroPontoCreate, db: Session = Depends(get_db)):
     novo_registro = ponto_repo.bater_ponto(ponto_in)
 
     return novo_registro
+
+@app.get("/pontos/{user_id}", response_model=List[JornadaDiariaResponse]) 
+def listar_pontos(user_id: int, db: Session = Depends(get_db)):
+    ponto_repo = PontoRepository(db)
+    registros = ponto_repo.listar_pontos_por_usuario(user_id)
+    return registros
