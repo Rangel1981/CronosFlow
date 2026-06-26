@@ -1,15 +1,15 @@
 # src/main.py
 from fastapi import FastAPI, Depends, HTTPException, status
 from sqlalchemy.orm import Session
-
-
+from src.schemas.ponto import RegistroPontoCreate, RegistroPontoResponse
+from src.repositories.ponto_repository import PontoRepository
 from src.core.database import SessionLocal  # Garanta que você tem a SessionLocal criada lá
 from src.schemas.user import UserCreate, UserResponse
 from src.repositories.user_repository import UserRepository
 
 app = FastAPI(title="CronosFlow API", version="0.1.0", summary="Um produto criado por Arthur Rangel!")
 
-# 1. Dependência para gerenciar a sessão do banco de dados
+#dependência para gerenciar a sessão do banco de dados
 def get_db():
     db = SessionLocal()
     try:
@@ -17,12 +17,12 @@ def get_db():
     finally:
         db.close()
 
-# Função temporária de criptografia (vamos evoluir isso logo mais!)
+# Função temporária de criptografia 
 def fake_hash_password(password: str) -> str:
     return password + "fake_hash"
 
 
-# 2. A Rota de Cadastro de Usuário
+#rota de Cadastro de Usuário
 @app.post("/users", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 def criar_usuario(user_in: UserCreate, db: Session = Depends(get_db)):
     """
@@ -50,3 +50,17 @@ def criar_usuario(user_in: UserCreate, db: Session = Depends(get_db)):
 @app.get("/")
 def read_root():
     return {"message": "CronosFlow rodando liso!"}
+
+
+@app.post("/pontos", response_model=RegistroPontoResponse, status_code=status.HTTP_201_CREATED)
+def bater_ponto(ponto_in: RegistroPontoCreate, db: Session = Depends(get_db)):
+    """
+    Endpoint para o trabalhador registrar o ponto (Entrada, Almoço, Saída).
+    A jornada é controlada e criada automaticamente se for o primeiro ponto do dia.
+    """
+    #iniciando repositorio de ponto e passando para a sessão de ponto para o banco
+    ponto_repo = PontoRepository(db)
+
+    novo_registro = ponto_repo.bater_ponto(ponto_in)
+
+    return novo_registro
