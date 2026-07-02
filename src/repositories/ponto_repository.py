@@ -1,18 +1,17 @@
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
+from typing import List
+from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 from sqlalchemy import select
 
 from src.core.ponto import JornadaDiaria, RegistroPonto, PontosBatidos
-from src.schemas.ponto import RegistroPontoCreate, List, RegistroPontoCreate
+from src.schemas.ponto import RegistroPontoCreate, RegistroPontoUpdate
 
 class PontoRepository:
     def __init__(self, db: Session):
         self.db = db
 
     def get_jornada_hoje(self, usuario_id: int) -> JornadaDiaria | None:
-        """
-        Busca se o usuário já tem uma jornada aberta na data de hoje.
-        """
         hoje = date.today()
         query = select(JornadaDiaria).where(
             JornadaDiaria.id_user == usuario_id,
@@ -21,10 +20,6 @@ class PontoRepository:
         return self.db.execute(query).scalar_one_or_none()
 
     def get_proximo_tipo_ponto(self, jornada: JornadaDiaria) -> PontosBatidos:
-        """
-        Conta quantos pontos o usuário já bateu hoje para deduzir o próximo tipo
-        baseado no Enum real do seu modelo (PontosBatidos).
-        """
         qtd_pontos = len(jornada.pontos)
 
         if qtd_pontos == 0:
@@ -36,20 +31,40 @@ class PontoRepository:
         else:
             return PontosBatidos.SAIDA
 
+    def listar_pontos_por_usuario(self, usuario_id: int) -> List[JornadaDiaria]:
+        query = (
+            select(JornadaDiaria)
+            .where(JornadaDiaria.id_user == usuario_id)
+            .order_by(JornadaDiaria.data.desc()) 
+        )
+        return self.db.execute(query).scalars().all()
+
     def bater_ponto(self, ponto_in: RegistroPontoCreate) -> RegistroPonto:
-        """
-        Método principal: Verifica a jornada, decide o tipo de ponto,
-        salva no banco e retorna o registro carimbado.
-        """
         jornada = self.get_jornada_hoje(ponto_in.usuario_id)
 
-        # Se não existir jornada para hoje, cria uma nova
+        if jornada and not jornada.status:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="A jornada de hoje já foi encerrada e não aceita novos pontos."
+            )
+
+        if jornada and jornada.pontos:
+            ultimo_ponto = max(jornada.pontos, key=lambda p: p.horario)
+            tempo_decorrido = datetime.now() - ultimo_ponto.horario
+            
+            if tempo_decorrido < timedelta(minutes=1):
+                tempo_restante = int(60 - tempo_decorrido.total_seconds())
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Ponto já registrado recentemente. Aguarde {tempo_restante} segundos para bater novamente."
+                )
+
         if not jornada:
             jornada = JornadaDiaria(
                 id_user=ponto_in.usuario_id,
                 data=date.today(),
                 status=True,       
-                saldo_horas=0     
+                saldo_horas=0      
             )
             self.db.add(jornada)
             self.db.commit()
@@ -57,27 +72,69 @@ class PontoRepository:
 
         tipo_detectado = self.get_proximo_tipo_ponto(jornada)
 
-        # Cria o registro de ponto respeitando os nomes do seu modelo
         novo_ponto = RegistroPonto(
             id_jornada=jornada.id,      
             horario=datetime.now(),
-            registro=tipo_detectado,    
-            
+            registro=tipo_detectado     
         )
-
         self.db.add(novo_ponto)
+        self.db.flush() 
+
+        if tipo_detectado == PontosBatidos.SAIDA:
+            batidas = sorted(jornada.pontos, key=lambda p: p.horario)
+            
+            if len(batidas) >= 4:
+                t1 = batidas[0].horario
+                t2 = batidas[1].horario
+                t3 = batidas[2].horario
+                t4 = batidas[3].horario
+
+                periodo_1 = t2 - t1
+                periodo_2 = t4 - t3
+                
+                total_trabalhado = periodo_1 + periodo_2
+                minutos_trabalhados = int(total_trabalhado.total_seconds() / 60)
+
+                jornada.saldo_horas = minutos_trabalhados
+                jornada.status = False
+                self.db.add(jornada)
+
         self.db.commit()
         self.db.refresh(novo_ponto)
-
         return novo_ponto
-    
-    def listar_pontos_por_usuario(self, usuario_id: int) -> List[JornadaDiaria]:
-            """
-            Busca todo o histórico de jornadas e pontos de um usuário específico.
-            """
-            query = (
-                select(JornadaDiaria)
-                .where(JornadaDiaria.id_user == usuario_id)
-                .order_by(JornadaDiaria.data.desc()) # Traz os dias mais recentes primeiro
+
+    def atualizar_ponto(self, ponto_id: int, ponto_in: RegistroPontoUpdate) -> RegistroPonto:
+        query_ponto = select(RegistroPonto).where(RegistroPonto.id == ponto_id)
+        ponto = self.db.execute(query_ponto).scalar_one_or_none()
+
+        if not ponto:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Registro de ponto não encontrado."
             )
-            return self.db.execute(query).scalars().all()
+
+        ponto.horario = ponto_in.horario.replace(tzinfo=None)
+        self.db.flush()
+
+        jornada = ponto.jornada
+        if jornada:
+            batidas = sorted(jornada.pontos, key=lambda p: p.horario)
+            
+            if len(batidas) >= 4:
+                t1 = batidas[0].horario
+                t2 = batidas[1].horario
+                t3 = batidas[2].horario
+                t4 = batidas[3].horario
+
+                periodo_1 = t2 - t1
+                periodo_2 = t4 - t3
+                
+                total_trabalhado = periodo_1 + periodo_2
+                minutos_trabalhados = int(total_trabalhado.total_seconds() / 60)
+
+                jornada.saldo_horas = minutos_trabalhados
+                self.db.add(jornada)
+
+        self.db.commit()
+        self.db.refresh(ponto)
+        return ponto

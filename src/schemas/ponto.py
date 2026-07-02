@@ -29,3 +29,9 @@ class JornadaDiariaResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+class RegistroPontoUpdate(BaseModel):
+    horario: datetime
+
+    class Config:
+        from_attributes = True

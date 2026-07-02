@@ -1,7 +1,7 @@
 from typing import List
 from fastapi import FastAPI, Depends, HTTPException, status
 from sqlalchemy.orm import Session
-from src.schemas.ponto import JornadaDiariaResponse, RegistroPontoCreate, RegistroPontoResponse
+from src.schemas.ponto import JornadaDiariaResponse, RegistroPontoCreate, RegistroPontoResponse, RegistroPontoUpdate
 from src.repositories.ponto_repository import PontoRepository
 from src.core.database import SessionLocal  
 from src.schemas.user import UserCreate, UserResponse
@@ -70,3 +70,9 @@ def listar_pontos(user_id: int, db: Session = Depends(get_db)):
     ponto_repo = PontoRepository(db)
     registros = ponto_repo.listar_pontos_por_usuario(user_id)
     return registros
+
+@app.put("/ponto/{ponto_id}", response_model=RegistroPontoResponse)
+def editar_registro_ponto(ponto_id: int, ponto_in: RegistroPontoUpdate, db: Session = Depends(get_db)):
+    ponto_repo = PontoRepository(db)
+    ponto_atualizado = ponto_repo.atualizar_ponto(ponto_id, ponto_in)
+    return ponto_atualizado
